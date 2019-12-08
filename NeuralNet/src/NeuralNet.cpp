@@ -11,11 +11,13 @@
 #include <cstdlib>
 #include <cassert>
 #include <cmath>
+#include <fstream>
+#include <boost/algorithm/string.hpp>
 
 // This reference is needed for typedef Layer, so it shall be kept here
 class Neuron;
 
-typedef std::vector<Neuron> Layer;
+typedef std::vector<Neuron> Layer_t;
 
 
 /*--------------- Class Neuron ----------------*/
@@ -30,17 +32,17 @@ public:
 	Neuron(unsigned numOutputs, unsigned myIndex);
 	void setOutputValue(double);
 	double getOutputValue(void) const;
-	void feedForward(Layer &previousLayer);
+	void feedForward(Layer_t &previousLayer);
 	void calculateOutputGradients(double targetVal);
-	void calculateHiddenGradients(const Layer &nextLayer);
-	void updateInputWeights(Layer &previousLayer);
+	void calculateHiddenGradients(const Layer_t &nextLayer);
+	void updateInputWeights(Layer_t &previousLayer);
 private:
 	static double eta; //static member of the class, so all the instances can use it instead of putting as dynamic part of the class.
 	static double alpha; // multiplier of the last weight change (momentum)
     static double randomWeight(void);
 	static double activationFunc (double var);
 	static double activationFuncDerivative (double var);
-	double sumDOW(const Layer &nextLayer) const;
+	double sumDOW(const Layer_t &nextLayer) const;
 
 	unsigned m_myIndex;
 	double outputValue;
@@ -70,7 +72,7 @@ double Neuron::activationFunc (double var) {
 	return tanh(var);
 }
 
-double randomWeight(void) {
+double Neuron::randomWeight(void) {
 
 	return rand() / double(RAND_MAX);
 
@@ -89,7 +91,7 @@ double Neuron::getOutputValue(void) const  {
 	return outputValue;
 }
 
-void Neuron::feedForward(Layer &previousLayer) {
+void Neuron::feedForward(Layer_t &previousLayer) {
 	double sum = 0.0;
 	for(unsigned iter = 0; iter<previousLayer.size(); ++iter) {
 		// add the result of multiplication of the output value of the neuron with the weighted value towards current neuron.
@@ -107,12 +109,12 @@ void Neuron::calculateOutputGradients(double targetVal) {
 
 }
 
-void Neuron::calculateHiddenGradients(const Layer &nextLayer) {
+void Neuron::calculateHiddenGradients(const Layer_t &nextLayer) {
 	double dow = sumDOW(nextLayer);
 	m_gradient = dow * Neuron::activationFuncDerivative(outputValue);
 }
 
-double Neuron::sumDOW(const Layer &nextLayer) const{
+double Neuron::sumDOW(const Layer_t &nextLayer) const{
 	double sum = 0.0;
 
 	for (unsigned iter = 0; iter < nextLayer.size(); ++iter) {
@@ -122,7 +124,7 @@ double Neuron::sumDOW(const Layer &nextLayer) const{
 	return sum;
 }
 
-void Neuron::updateInputWeights(Layer &previousLayer) {
+void Neuron::updateInputWeights(Layer_t &previousLayer) {
 	// The weights to be modified are in the connection container in the neurons of the previous layer
 	for (unsigned iter = 0; iter < previousLayer.size(); ++iter) {
 		Neuron &neuron = previousLayer[iter];
@@ -148,7 +150,7 @@ public:
 	void backProb(const std::vector<double> &targetValues);
 	void getResults(std::vector<double> &resultsVal) const;
 private:
-	std::vector<Layer> m_layers;
+	std::vector<Layer_t> m_layers;
 	double m_error;
 	double m_recentAverageError;
 	double m_recentAverageSmoothingError;
@@ -163,7 +165,7 @@ Net::Net(const std::vector<unsigned> &topology){
 
 	for (unsigned layerNum = 0; layerNum < numLayers; ++layerNum) {
 		// add new empty layer to the net
-		m_layers.push_back(Layer());
+		m_layers.push_back(Layer_t());
 		// define the number of outputs for neurons, use ternary operator to get the number of outputs.
 		unsigned numOutputs = (layerNum == topology.size() - 1? 0: topology[layerNum+1]);
 		// <= to add the bias neuron to the layer
@@ -188,7 +190,7 @@ void Net::feedForward(const std::vector<double> &inputValues) {
 	// counter started with value 1 to skip the input layer
 	for (unsigned iterLayer = 1; iterLayer < m_layers.size(); ++iterLayer) {
 		//pointer to the previous later needed by the neuron to feed forward
-		Layer &previousLayer = m_layers[iterLayer -1];
+		Layer_t &previousLayer = m_layers[iterLayer -1];
 		// size() - 1 to skip the bias neuron
 		for (unsigned iterNeuron = 0; iterNeuron < m_layers[iterLayer].size() -1; ++iterNeuron) {
 			m_layers[iterLayer][iterNeuron].feedForward(previousLayer);
@@ -200,7 +202,7 @@ void Net::feedForward(const std::vector<double> &inputValues) {
 
 void Net::backProb(const std::vector<double> &targetValues) {
 
-	Layer &outputLayer = m_layers.back();
+	Layer_t &outputLayer = m_layers.back();
 	//update the error for the whole network
 	m_error = 0;
 
@@ -225,8 +227,8 @@ void Net::backProb(const std::vector<double> &targetValues) {
 	//calculate the hidden layer gradients, will start calculation from the right to the one before the start
 	for (unsigned iter = m_layers.size() - 2; iter > 0; --iter) {
 
-		Layer &hiddenLayer = m_layers[iter]; // pointer the current layer
-		Layer &nextLayer = m_layers[iter +1]; // pointer to the next layer
+		Layer_t &hiddenLayer = m_layers[iter]; // pointer the current layer
+		Layer_t &nextLayer = m_layers[iter +1]; // pointer to the next layer
 
 		for (int unsigned i = 0; i < hiddenLayer.size(); ++i) {
 			hiddenLayer[i].calculateHiddenGradients(nextLayer);
@@ -236,8 +238,8 @@ void Net::backProb(const std::vector<double> &targetValues) {
 	//update connection weights, loop over all layers except for the input and the output one
 	for (unsigned i = m_layers.size()-1; i>0; ++i) {
 
-		Layer &previousLayer = m_layers[i-1];
-		Layer &layer = m_layers[i];
+		Layer_t &previousLayer = m_layers[i-1];
+		Layer_t &layer = m_layers[i];
 
 		for (unsigned j = 0; j < layer.size() - 1; ++j) {
 		            layer[j].updateInputWeights(previousLayer);
@@ -257,23 +259,72 @@ void Net::getResults(std::vector<double> &resultsVal) const {
 }
 
 
+
+
+
 int main() {
-	// e.g., {3,2,1}
+	// e.g., {4,2,1}
 	std::vector<unsigned> topology;
-	topology.push_back(3);
+	topology.push_back(4);
 	topology.push_back(2);
 	topology.push_back(1);
 
 	Net my_net(topology);
+//
+//	const std::vector<double> inputValues;
+//	my_net.feedForward(inputValues);
+//
+//	const std::vector<double> targetValues;
+//	my_net.backProb(targetValues);
+//
+//	std::vector<double> resultsValues;
+//	my_net.getResults(resultsValues);
 
-	const std::vector<double> inputValues;
-	my_net.feedForward(inputValues);
+	std::ifstream myFile ("/Users/abahnasy/Desktop/neural_net_in_cpp/NeuralNet/src/iris.csv");
+//	std::cout << myFile.rdstate() << std::endl;
 
-	const std::vector<double> targetValues;
-	my_net.backProb(targetValues);
+//	std::cout << " good()=" << myFile.good();
+//	std::cout << " eof()=" << myFile.eof();
+//	std::cout << " fail()=" << myFile.fail();
+//	std::cout << " bad()=" << myFile.bad();
 
-	std::vector<double> resultsValues;
-	my_net.getResults(resultsValues);
+	static int counter = 0; //to skip the title row in csv file
+
+	while(myFile.good()){
+
+		std::string line;
+		getline(myFile, line, '\n');
+		if(counter++ != 0) {
+			std::vector<double> sampleInputs;
+			std::vector<double> targetValues;
+			std::vector<std::string> results;
+			std::string delims(",");
+			boost::split(results, line, boost::is_any_of(delims));
+
+			sampleInputs.push_back(std::stod(results.at(0)));
+			sampleInputs.push_back(std::stod(results.at(1)));
+			sampleInputs.push_back(std::stod(results.at(2)));
+			sampleInputs.push_back(std::stod(results.at(3)));
+
+
+			std::string targetValueName = results.at(4);
+			if (targetValueName == "Setosa") {
+				targetValues.push_back(0);
+			} else if (targetValueName == "Versicolor") {
+				targetValues.push_back(1);
+			} else {/*Virginica*/
+				targetValues.push_back(2);
+			}
+		}
+		//counter++;
+
+
+
+	}
+
+	std::cout << counter << "\n";
+
+
 
 
 	return 0;
